@@ -263,6 +263,7 @@ let currentTZ = 'arg';
 let currentView = 'mine';
 let syncData = {}; // all players' data from storage
 let saveTimer = null;
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxAg9_2adZcyvFKERhKCa25aDDq-PCST1NO1U_w0vf3tYoUFupIVPBeSyOw96j73YJG/exec';
 
 // ── LOGIN ──
 function login(player) {
@@ -279,21 +280,17 @@ function logout() {
   currentPlayer = null;
 }
 
-// ── STORAGE (Anthropic persistent storage) ──
+// ── STORAGE (Google Sheets via Apps Script) ──
 async function loadFromStorage() {
   setSyncStatus('Cargando...','saving');
   try {
-    const result = await window.storage.get('prode2026_all', true);
-    if(result && result.value) {
-      syncData = JSON.parse(result.value);
-    } else {
-      syncData = {};
-    }
+    const res = await fetch(SCRIPT_URL + '?action=get');
+    const text = await res.text();
+    syncData = text && text !== '{}' ? JSON.parse(text) : {};
     setSyncStatus('Conectado ✓','');
   } catch(e) {
-    // fallback to localStorage
     try { syncData = JSON.parse(localStorage.getItem('prode2026_all') || '{}'); } catch(e2) { syncData={}; }
-    setSyncStatus('Modo offline','error');
+    setSyncStatus('Modo offline (sin conexión)','error');
   }
   renderAll();
 }
@@ -301,8 +298,10 @@ async function loadFromStorage() {
 async function saveToStorage() {
   setSyncStatus('Guardando...','saving');
   try {
-    await window.storage.set('prode2026_all', JSON.stringify(syncData), true);
-    // also local backup
+    const body = new URLSearchParams();
+    body.append('action','set');
+    body.append('value', JSON.stringify(syncData));
+    await fetch(SCRIPT_URL, { method: 'POST', body: body });
     try { localStorage.setItem('prode2026_all', JSON.stringify(syncData)); } catch(e) {}
     setSyncStatus('Guardado ✓','');
   } catch(e) {
@@ -580,9 +579,10 @@ function renderAll() { renderGroups(); renderKO(); }
 setInterval(async () => {
   if(!currentPlayer) return;
   try {
-    const result = await window.storage.get('prode2026_all', true);
-    if(result && result.value) {
-      const fresh = JSON.parse(result.value);
+    const res = await fetch(SCRIPT_URL + '?action=get');
+    const text = await res.text();
+    if(text && text !== '{}') {
+      const fresh = JSON.parse(text);
       // merge: keep my own predictions, take everything else fresh
       if(currentPlayer && syncData[currentPlayer]) {
         fresh[currentPlayer] = syncData[currentPlayer];
